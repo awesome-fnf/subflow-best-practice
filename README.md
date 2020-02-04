@@ -41,9 +41,9 @@
 
 流程执行图如下：
 
-图一
+[流程图](https://github.com/awesome-fnf/subflow-best-practice/blob/master/structure.jpg)
 
-您可从 [github](<https://github.com/awesome-fnf/subflow-audit>) 获取本示例的全部代码。代码库中提供了一键搭建本示例全资源的工具，在使用前，请确保您已开通阿里云函数计算、函数工作流服务。
+您可从 [github](<https://github.com/awesome-fnf/subflow-best-practice>) 获取本示例的全部代码。代码库中提供了一键搭建本示例全资源的工具，在使用前，请确保您已开通阿里云函数计算、函数工作流服务。
 
 #### 资源准备
 
@@ -63,14 +63,14 @@ aliyun ros CreateStack --StackName=stack1 --TemplateBody "$(cat ./ros.yaml)" --r
 
 - ##### 函数计算
 
-  您可以从 [audit.py](<https://github.com/awesome-fnf/ETL-DataProcessing/blob/master/flow/demo-etl-flow.yaml>) 获取本文所用的函数。
+  您可以从 [audit.py](<https://github.com/awesome-fnf/subflow-best-practice/blob/master/Functions/audit.py>) 获取本文所用的函数。
 
 - ##### 函数工作流
 
   示例工程会创建两个工作流：
 
-  - [main](<https://github.com/awesome-fnf/ETL-DataProcessing/blob/master/functions/shards-spliter.py>): 业务的主处理流程，用于触发一个审批流程，等待审批结果并判断执行情况；
-  - [audit](<https://github.com/awesome-fnf/ETL-DataProcessing/blob/master/functions/mapper.py>): 业务审批流程；
+  - [main](<https://github.com/awesome-fnf/subflow-best-practice/blob/master/Flow/main.yaml>): 业务的主处理流程，用于触发一个审批流程，等待审批结果并判断执行情况；
+  - [audit](<https://github.com/awesome-fnf/subflow-best-practice/blob/master/Flow/audit.yaml>): 业务审批流程；
 
   您可以在 [函数工作流控制台](<https://fnf.console.aliyun.com/>) 查看创建结果。
 
@@ -82,6 +82,6 @@ aliyun ros CreateStack --StackName=stack1 --TemplateBody "$(cat ./ros.yaml)" --r
 }
 ```
 运行示例及执行结果：
-
+[运行结果](https://github.com/awesome-fnf/subflow-best-practice/blob/master/subflow-best-practice.gif)
 
 
