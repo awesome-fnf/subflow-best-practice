@@ -1,0 +1,233 @@
+ROSTemplateFormatVersion: '2015-09-01'
+
+Resources:
+  RAMRole:
+    Type: ALIYUN::RAM::Role
+    Properties:
+      RoleName:
+        Fn::Replace:
+          - <random-suffix>:
+              Ref: ALIYUN::StackName
+          - SubflowAuditDemoRole-<random-suffix>
+      Description: 'RAM role for sub flow demo'
+      AssumeRolePolicyDocument:
+        Version: 1
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - fc.aliyuncs.com
+                - fnf.aliyuncs.com
+      Policies:
+        - PolicyName:
+            Fn::Replace:
+              - <random-suffix>:
+                  Ref: ALIYUN::StackName
+              - SubflowAuditDemoRole-<random-suffix>
+          PolicyDocument:
+            Version: 1
+            Statement:
+              - Effect: Allow
+                Action:
+                  - fc:InvokeFunction
+                  - fnf:StartExecution
+                  - fnf:ReportTaskSucceeded
+                  - fnf:ReportTaskFailed
+                Resource:
+                  - '*'
+
+  # Create FC service
+  Service:
+    DependsOn:
+      - RAMRole
+    Type: ALIYUN::FC::Service
+    Properties:
+      ServiceName:
+        Fn::Replace:
+          - <random-suffix>:
+              Ref: ALIYUN::StackName
+          - audit_demo-<random-suffix>
+      Role:
+        Fn::Replace:
+          - <main-account-id>:
+              Ref: ALIYUN::TenantId
+            <random-suffix>:
+              Ref: ALIYUN::StackName
+          - acs:ram::<main-account-id>:role/SubflowAuditDemoRole-<random-suffix>
+      InternetAccess: true
+
+
+  # Create function run and callback
+  FunctionAudit:
+    Type: ALIYUN::FC::Function
+    DependsOn:
+      - Service
+    Properties:
+      ServiceName:
+        Fn::Replace:
+          - <random-suffix>:
+              Ref: ALIYUN::StackName
+          - audit_demo-<random-suffix>
+      Code:
+        SourceCode:
+          Fn::Replace:
+            - <region>:
+                Ref: ALIYUN::Region
+            - |-
+              # -*- coding: utf-8 -*-
+              import json
+              import random
+
+              def handler(event, context):
+                  evt = json.loads(event)
+                  if 'auditMessage' not in evt:
+                      return '{"result": "auditMessage not specified", "audited": false}'
+
+                  seed = random.randint(0, 10)
+                  if seed > 8: # not audited
+                      return '{"result": "audit denied with input: %s", "audited": false}' % evt['auditMessage']
+
+                  return '{"result": "audit passed", "audited": true}'
+
+      FunctionName: audit
+      Handler: index.handler
+      Runtime: python3
+      MemorySize: 128
+      Timeout: 120
+
+
+  FlowMain:
+    DependsOn:
+      - RAMRole
+    Type: ALIYUN::FNF::Flow
+    Properties:
+      Description: "FnF sub flow demo main flow"
+      Name:
+        Fn::Replace:
+          - <random-suffix>:
+              Ref: ALIYUN::StackName
+          - audit_demo_main-<random-suffix>
+      RoleArn:
+        Fn::Replace:
+          - <main-account-id>:
+              Ref: ALIYUN::TenantId
+            <random-suffix>:
+              Ref: ALIYUN::StackName
+          - acs:ram::<main-account-id>:role/SubflowAuditDemoRole-<random-suffix>
+      Definition:
+        Fn::Replace:
+          - <random-suffix>:
+              Ref: ALIYUN::StackName
+          - |-
+            version: v1beta1
+            type: flow
+            steps:
+              - type: task
+                name: triggerAudit
+                resourceArn: acs:fnf:::flow/audit_demo_child-<random-suffix>
+                pattern: sync
+                inputMappings: 
+                  - target: auditMessage
+                    source: $input.auditMessage
+                outputMappings:
+                  - target: audited
+                    source: $local.audited
+                serviceParams:
+                  Input: $  
+                retry:
+                  - errors: # 捕获需要重试的错误进行重试
+                      - AuditErrorNeedsRetry
+                      - FnF.TaskTimeout
+                    intervalSeconds: 30
+                    maxAttempts: 2
+                    multiplier: 2
+                catch: # 捕获 error 抛出的其他错误以及重试多次异常错误，跳转到最后步骤 notifyDeveloper
+                  - errors:
+                    - FnF.TaskTimeout   
+                    - FnF.RuntimeError     
+                    - AuditErrorNeedsRetry # 子流程自定义的错误返回
+                    - AuditUnknown 
+                    goto: notifyDeveloper
+              - type: choice
+                name: check_status
+                choices:
+                  - condition: $.audited == "true"
+                    steps:
+                      - type: pass
+                        name: auditPassedDoJobs
+                default:
+                  goto: notifyDeveloper
+              - type: pass # 模拟最后的通知步骤
+                name: notifyDeveloper
+  FlowChild:
+    DependsOn:
+      - RAMRole
+    Type: ALIYUN::FNF::Flow
+    Properties:
+      Description: "FnF sub flow demo main flow"
+      Name:
+        Fn::Replace:
+          - <random-suffix>:
+              Ref: ALIYUN::StackName
+          - audit_demo_child-<random-suffix>
+      RoleArn:
+        Fn::Replace:
+          - <main-account-id>:
+              Ref: ALIYUN::TenantId
+            <random-suffix>:
+              Ref: ALIYUN::StackName
+          - acs:ram::<main-account-id>:role/SubflowAuditDemoRole-<random-suffix>
+      Definition:
+        Fn::Replace:
+          - <random-suffix>:
+              Ref: ALIYUN::StackName
+          - |-
+            version: v1beta1
+            type: flow
+            steps:
+              - type: wait
+                name: notify # you can add notify functions here.
+                duration: 10
+              - type: task
+                name: doAudit
+                resourceArn: acs:fc:::services/audit_demo-<random-suffix>/functions/audit
+                inputMappings:
+                  - target: auditMessage
+                    source: $input.auditMessage
+                outputMappings:
+                  - target: audited
+                    source: $local.audited
+                  - target: result
+                    source: $local.result
+                retry:
+                  - errors: # 捕获因限流、偶发失败的 error
+                      - FC.ResourceThrottled
+                      - FC.ResourceExhausted
+                      - FC.InternalServerError
+                      - FnF.TaskTimeout
+                      - FC.Unknown
+                    intervalSeconds: 30
+                    maxAttempts: 3
+                    multiplier: 2
+                catch: # 捕获 error 抛出的重试多次异常错误，跳转到最后步骤 notifyDeveloper。
+                       # 建议每个层级处理自己层级的错误，如这里捕获函数执行的错误，包装后返回给主流程
+                  - errors:
+                    - FnF.InvalidLocal # 函数代码不规范造成的错误，或其他函数内部自定义的错误
+                    goto: ErrUnknown # 子流程自定义的错误返回
+                  - errors: # 与函数计算系统返回的相关错误
+                    - FC.ResourceThrottled
+                    - FC.ResourceExhausted
+                    - FC.InternalServerError
+                    goto: AuditNeedRetry # 子流程自定义的错误返回
+              - type: pass
+                name: auditFinishedandDoOtherJobs
+                end: true
+              - type: fail
+                name: ErrUnknown
+                error: AuditUnknown
+                cause: unknown error occurs
+              - type: fail
+                name: AuditNeedRetry
+                error: AuditErrorNeedsRetry
+                cause: error needs retry

@@ -1,0 +1,48 @@
+version: v1beta1
+type: flow
+steps:
+  - type: wait
+    name: notify # you can add notify functions here.
+    duration: 10
+  - type: task
+    name: doAudit
+    resourceArn: acs:fc:::services/subflow/functions/audit
+    inputMappings:
+      - target: auditMessage
+        source: $input.auditMessage
+    outputMappings:
+      - target: audited
+        source: $local.audited
+      - target: result
+        source: $local.result
+    retry:
+      - errors: # 捕获因限流、偶发失败的 error
+          - FC.ResourceThrottled
+          - FC.ResourceExhausted
+          - FC.InternalServerError
+          - FnF.TaskTimeout
+          - FC.Unknown
+        intervalSeconds: 30
+        maxAttempts: 3
+        multiplier: 2
+    catch: # 捕获 error 抛出的重试多次异常错误，跳转到最后步骤 notifyDeveloper。
+           # 建议每个层级处理自己层级的错误，如这里捕获函数执行的错误，包装后返回给主流程
+      - errors:
+        - FnF.InvalidLocal # 函数代码不规范造成的错误，或其他函数内部自定义的错误
+        goto: ErrUnknown # 子流程自定义的错误返回
+      - errors: # 与函数计算系统返回的相关错误
+        - FC.ResourceThrottled
+        - FC.ResourceExhausted
+        - FC.InternalServerError
+        goto: AuditNeedRetry # 子流程自定义的错误返回
+  - type: pass
+    name: auditFinishedandDoOtherJobs
+    end: true
+  - type: fail
+    name: ErrUnknown
+    error: AuditUnknown
+    cause: unknown error occurs
+  - type: fail
+    name: AuditNeedRetry
+    error: AuditErrorNeedsRetry
+    cause: error needs retry

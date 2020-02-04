@@ -1,0 +1,42 @@
+version: v1beta1
+type: flow
+steps:
+  - type: task
+    name: triggerAudit
+    resourceArn: acs:fnf:::flow/audit_child
+    pattern: sync
+    inputMappings: 
+      - target: auditMessage
+        source: $input.auditMessage
+    outputMappings:
+      - target: audited
+        source: $local.audited
+    serviceParams:
+      Input: $  
+    retry:
+      - errors: # 捕获需要重试的错误进行重试
+          - AuditErrorNeedsRetry
+          - FnF.TaskTimeout
+        intervalSeconds: 30
+        maxAttempts: 2
+        multiplier: 2
+    catch: # 捕获 error 抛出的其他错误以及重试多次异常错误，跳转到最后步骤 notifyDeveloper
+      - errors:
+        - FnF.TaskTimeout   
+        - FnF.RuntimeError     
+        - AuditErrorNeedsRetry # 子流程自定义的错误返回
+        - AuditUnknown 
+        goto: notifyDeveloper
+  - type: choice
+    name: check_status
+    choices:
+      - condition: $.audited == "true"
+        steps:
+          - type: pass
+            name: auditPassedDoJobs
+    default:
+      goto: notifyDeveloper
+  - type: pass # 模拟最后的通知步骤
+    name: notifyDeveloper
+
+
